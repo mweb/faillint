@@ -12,13 +12,15 @@ import (
 )
 
 type faillint struct {
-	paths       string // -paths flag
+	paths     string // -paths flag
+	testpaths string // -testpaths flag
 }
 
 // NewAnalyzer create a faillint analyzer
 func NewAnalyzer() *analysis.Analyzer {
 	f := faillint{
-		paths:       "",
+		paths:     "",
+		testpaths: "",
 	}
 	a := &analysis.Analyzer{
 		Name:             "faillint",
@@ -27,6 +29,7 @@ func NewAnalyzer() *analysis.Analyzer {
 		RunDespiteErrors: true,
 	}
 	a.Flags.StringVar(&f.paths, "paths", "", "import paths to fail")
+	a.Flags.StringVar(&f.testpaths, "testpaths", "", "import paths for all _test.go files and packages to fail")
 	return a
 }
 
@@ -36,12 +39,51 @@ func (f *faillint) run(pass *analysis.Pass) (interface{}, error) {
 		return nil, nil
 	}
 
-	p := strings.Split(f.paths, ",")
+	imports, suggestions := getRules(strings.Split(f.paths, ","))
+	testImports, testSuggestions := imports, suggestions
+	if f.testpaths != "" {
+		testImports, testSuggestions = getRules(strings.Split(f.testpaths, ","))
+	}
 
-	suggestions := make(map[string]string, len(p))
-	imports := make([]string, 0, len(p))
+	for _, file := range pass.Files {
+		if strings.Contains(pass.Fset.File(file.Package).Name(), "_test.go") {
+			checkImport(pass, file, testImports, testSuggestions)
+		} else {
+			checkImport(pass, file, imports, suggestions)
+		}
 
-	for _, s := range p {
+	}
+
+	return nil, nil
+}
+
+// checkImport checks the import statement of a file against a list with
+// forbidden imports
+func checkImport(pass *analysis.Pass, file *ast.File, imports []string, suggestions map[string]string) {
+	for _, path := range imports {
+		imp := usesImport(file, path)
+		if imp == nil {
+			continue
+		}
+
+		impPath := importPath(imp)
+
+		msg := fmt.Sprintf("package %q shouldn't be imported", impPath)
+		if s := suggestions[impPath]; s != "" {
+			msg += fmt.Sprintf(", suggested: %q", s)
+		}
+
+		pass.Reportf(imp.Path.Pos(), msg)
+	}
+}
+
+// getRules generates a list with all the imports and a map with all the
+// suggestions from the paths strings
+func getRules(paths []string) ([]string, map[string]string) {
+	suggestions := make(map[string]string, len(paths))
+	imports := make([]string, 0, len(paths))
+
+	for _, s := range paths {
 		imps := strings.Split(s, "=")
 
 		imp := imps[0]
@@ -54,25 +96,7 @@ func (f *faillint) run(pass *analysis.Pass) (interface{}, error) {
 		suggestions[imp] = suggest
 	}
 
-	for _, file := range pass.Files {
-		for _, path := range imports {
-			imp := usesImport(file, path)
-			if imp == nil {
-				continue
-			}
-
-			impPath := importPath(imp)
-
-			msg := fmt.Sprintf("package %q shouldn't be imported", impPath)
-			if s := suggestions[impPath]; s != "" {
-				msg += fmt.Sprintf(", suggested: %q", s)
-			}
-
-			pass.Reportf(imp.Path.Pos(), msg)
-		}
-	}
-
-	return nil, nil
+	return imports, suggestions
 }
 
 // usesImport reports whether a given import is used.
