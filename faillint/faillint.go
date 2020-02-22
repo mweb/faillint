@@ -11,28 +11,32 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// Analyzer of the linter
-var Analyzer = &analysis.Analyzer{
-	Name:             "faillint",
-	Doc:              "report unwanted import path usages",
-	Run:              run,
-	RunDespiteErrors: true,
+type faillint struct {
+	paths       string // -paths flag
 }
 
-var paths string // -paths flag
-
-func init() {
-	// seems like using init() is the only way to add our own flags
-	Analyzer.Flags.StringVar(&paths, "paths", paths, "import paths to fail")
+// NewAnalyzer create a faillint analyzer
+func NewAnalyzer() *analysis.Analyzer {
+	f := faillint{
+		paths:       "",
+	}
+	a := &analysis.Analyzer{
+		Name:             "faillint",
+		Doc:              "report unwanted import path usages",
+		Run:              f.run,
+		RunDespiteErrors: true,
+	}
+	a.Flags.StringVar(&f.paths, "paths", "", "import paths to fail")
+	return a
 }
 
 // Run is the runner for an analysis pass
-func run(pass *analysis.Pass) (interface{}, error) {
-	if paths == "" {
+func (f *faillint) run(pass *analysis.Pass) (interface{}, error) {
+	if f.paths == "" {
 		return nil, nil
 	}
 
-	p := strings.Split(paths, ",")
+	p := strings.Split(f.paths, ",")
 
 	suggestions := make(map[string]string, len(p))
 	imports := make([]string, 0, len(p))
