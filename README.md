@@ -55,6 +55,18 @@ If you have a preferred import path to suggest, append the suggestion after a `=
 -paths "log=go.uber.org/zap,errors=github.com/pkg/errors"
 ```
 
+
+If you want to have separate rules for test files and for the regular files add the
+testpaths parameter:
+
+```
+# fail if reflect or error is used within regular files but not if reflect is used within the test files.
+-paths "reflect,errors" -ignorepaths "errors"
+```
+
+If the testpaths is set to empty the paths rules will be applied for the test and the normal files.
+
+
 ## Example
 
 Assume we have the following file:
